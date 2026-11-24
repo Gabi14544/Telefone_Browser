@@ -237,9 +237,11 @@ class WifiDialog(AppDialog):
 class FilesDialog(AppDialog):
     def __init__(self, parent, device):
         super().__init__(parent, "Archivos del teléfono", 610, 500)
+        self.app = parent.get_application()
         self.backend = parent.backend
         self.device = device
         self.folder = PHONE_ROOT
+        self.folder_loaded = False
         self.loading = False
         self.cancel = None
 
@@ -248,7 +250,7 @@ class FilesDialog(AppDialog):
         header.add(styled(label(device.transport), "connection-pill"))
         self.body.add(header)
         shortcuts = row()
-        self.up = button("Subir", "go-up-symbolic")
+        self.up = button("Carpeta superior", "go-up-symbolic")
         self.up.connect("clicked", lambda _: self.open_folder(self.folder.parent))
         shortcuts.add(self.up)
         self.shortcuts = []
@@ -283,12 +285,16 @@ class FilesDialog(AppDialog):
         scroll.add(self.tree)
         self.body.pack_start(scroll, True, True, 0)
 
-        actions = row(10)
         self.status = label("", "secondary", wrap=True, lines=3)
-        actions.pack_start(self.status, True, True, 0)
+        self.body.add(self.status)
+        actions = row(10)
         self.download_button = button("Descargar selección", "folder-download-symbolic", "primary")
         self.download_button.connect("clicked", self._choose_destination)
-        actions.add(self.download_button)
+        self.upload_button = button("Subir archivos", "document-send-symbolic")
+        self.upload_button.set_tooltip_text("Copiá archivos de la PC a la carpeta del teléfono que estás viendo.")
+        self.upload_button.connect("clicked", self._choose_upload_files)
+        actions.pack_end(self.download_button, False, False, 0)
+        actions.pack_end(self.upload_button, False, False, 0)
         self.body.add(actions)
         self.selection.connect("changed", lambda _: self._update_actions())
         self.open_folder(self.folder)
@@ -297,7 +303,7 @@ class FilesDialog(AppDialog):
         if self.cancel is not None:
             self.cancel.set()
             self.close_button.set_sensitive(False)
-            feedback(self.status, "Cancelando la descarga…")
+            feedback(self.status, "Cancelando la transferencia…")
         else:
             self.destroy()
 
@@ -317,13 +323,14 @@ class FilesDialog(AppDialog):
         for shortcut in self.shortcuts:
             shortcut.set_sensitive(idle)
         self.download_button.set_sensitive(idle and bool(self._selected_files()))
+        self.upload_button.set_sensitive(idle and self.folder_loaded)
 
     def _activate_row(self, _, path, _column):
         _, name, directory = self.store[path]
         if directory:
             self.open_folder(self.folder / name)
 
-    def open_folder(self, folder):
+    def open_folder(self, folder, *, notice=None):
         if self.loading or self.cancel is not None:
             return
         self.loading = True
@@ -334,6 +341,7 @@ class FilesDialog(AppDialog):
             if not self.alive:
                 return
             self.folder = folder
+            self.folder_loaded = True
             relative = folder.relative_to(PHONE_ROOT)
             self.path_label.set_text("Almacenamiento compartido" if not relative.parts else f"/{relative}")
             self.store.clear()
@@ -343,12 +351,16 @@ class FilesDialog(AppDialog):
             self.loading = False
             self._update_actions()
             message = f"{len(entries)} elementos" if entries else "La carpeta está vacía."
-            feedback(self.status, message)
+            feedback(self.status, *(notice or (message, False)))
 
         def failed(message):
             if self.alive:
                 self.loading = False
+                if folder == self.folder:
+                    self.folder_loaded = False
                 self._update_actions()
+                if notice:
+                    message = f"{notice[0]}\n{message}"
                 feedback(self.status, message, error=True)
 
         background(lambda: self.backend.list_folder(self.device.serial, folder), opened, failed)
@@ -366,22 +378,42 @@ class FilesDialog(AppDialog):
         response = chooser.run()
         folder = chooser.get_filename()
         chooser.destroy()
-        if response == Gtk.ResponseType.ACCEPT and folder:
-            self._download(files, Path(folder))
+        if self.alive and response == Gtk.ResponseType.ACCEPT and folder:
+            self._transfer(files, Path(folder))
 
-    def _download(self, files, destination):
+    def _choose_upload_files(self, *_):
+        if not self.folder_loaded or self.loading or self.cancel is not None:
+            return
+        chooser = Gtk.FileChooserDialog(
+            title=f"Subir archivos a {self.path_label.get_text()}",
+            transient_for=self, action=Gtk.FileChooserAction.OPEN,
+        )
+        chooser.set_select_multiple(True)
+        chooser.add_buttons("Cancelar", Gtk.ResponseType.CANCEL, "Subir archivos", Gtk.ResponseType.ACCEPT)
+        chooser.set_default_response(Gtk.ResponseType.ACCEPT)
+        response = chooser.run()
+        files = [Path(filename) for filename in chooser.get_filenames()]
+        chooser.destroy()
+        if self.alive and response == Gtk.ResponseType.ACCEPT and files:
+            self._transfer(files, self.folder, upload=True)
+
+    def _transfer(self, files, destination, *, upload=False):
         cancel = self.cancel = Event()
-        self.close_button.set_label("Cancelar descarga")
+        transfer = self.backend.upload if upload else self.backend.download
+        verb = "Subiendo" if upload else "Descargando"
+        self.close_button.set_label("Cancelar transferencia")
         self._update_actions()
-        feedback(self.status, "Preparando descarga…")
+        feedback(self.status, "Preparando transferencia…")
+        self.app.hold()
 
         def progress(index, count, name):
             def update():
                 if self.alive and not cancel.is_set():
-                    feedback(self.status, f"Descargando {index} de {count} · {name}")
+                    feedback(self.status, f"{verb} {index} de {count} · {name}")
             GLib.idle_add(update)
 
         def finished(result=None, error=""):
+            self.app.release()
             if not self.alive:
                 return
             self.cancel = None
@@ -392,15 +424,19 @@ class FilesDialog(AppDialog):
                 feedback(self.status, error, error=True)
                 return
             count = len(result.saved)
-            summary = f"{count} archivo(s) guardado(s) en {destination}."
-            if cancel.is_set() and result.error:
-                feedback(self.status, f"Descarga cancelada. {summary}")
-            elif result.error:
-                feedback(self.status, f"{summary}\n{result.error}", error=True)
+            saved = "archivo guardado" if count == 1 else "archivos guardados"
+            place = self.path_label.get_text() if upload else destination
+            message = f"{count} {saved} en {place}."
+            if result.cancelled:
+                message = f"Transferencia cancelada. {message}"
+            if result.error:
+                message = f"{message}\n{result.error}"
+            if upload and result.saved:
+                self.open_folder(destination, notice=(message, bool(result.error)))
             else:
-                feedback(self.status, summary)
+                feedback(self.status, message, error=bool(result.error))
 
-        background(lambda: self.backend.download(self.device.serial, files, destination, progress, cancel),
+        background(lambda: transfer(self.device.serial, files, destination, progress, cancel),
                    finished, lambda error: finished(error=error))
 
 
@@ -480,13 +516,22 @@ class MainWindow(Gtk.ApplicationWindow):
         self.allow_control.get_accessible().set_name("Control con mouse y teclado")
         control_row.add(self.allow_control)
         screen.add(control_row)
+        screen_off_row = row()
+        screen_off_row.pack_start(label("Apagar pantalla del teléfono"), True, True, 0)
+        self.screen_off = Gtk.Switch()
+        self.screen_off.get_accessible().set_name("Apagar pantalla del teléfono")
+        self.screen_off.set_tooltip_text(
+            "Desbloqueá el teléfono antes de iniciar. Podés seguir usándolo desde la PC con el panel físico apagado."
+        )
+        screen_off_row.add(self.screen_off)
+        screen.add(screen_off_row)
         self.start_button = button("Iniciar transmisión", "media-playback-start-symbolic", "primary")
         self.start_button.connect("clicked", self._toggle_screen)
         screen.add(self.start_button)
 
         files = card("Archivos del teléfono", "folder-symbolic")
         controls.pack_start(files, True, True, 0)
-        files.pack_start(label("Guardá fotos, videos y documentos del almacenamiento compartido.",
+        files.pack_start(label("Copiá fotos, videos y documentos entre la PC y el teléfono.",
                                "secondary", wrap=True), True, True, 0)
         self.files_button = button("Explorar archivos", "folder-open-symbolic")
         self.files_button.connect("clicked", self._open_files)
@@ -513,6 +558,7 @@ class MainWindow(Gtk.ApplicationWindow):
         body.add(window)
 
         self.device_combo.connect("changed", lambda _: self._update_controls())
+        self.allow_control.connect("notify::active", lambda *_: self._update_controls())
         self.connect("destroy", self._destroyed)
         self.update_source = GLib.timeout_add(500, self._track_screen)
         self._update_controls()
@@ -548,6 +594,7 @@ class MainWindow(Gtk.ApplicationWindow):
         self.device_combo.set_sensitive(not active and bool(self.devices))
         self.quality.set_sensitive(not active)
         self.allow_control.set_sensitive(not active)
+        self.screen_off.set_sensitive(not active and self.allow_control.get_active())
         for control in self.window_buttons:
             control.set_sensitive(self.window_id is not None and self.stopping_at is None)
 
@@ -607,6 +654,7 @@ class MainWindow(Gtk.ApplicationWindow):
                 self.log = tempfile.TemporaryFile(mode="w+b")
                 self.process = self.backend.start_screen(
                     device.serial, QUALITIES[self.quality.get_active()], self.allow_control.get_active(), self.log,
+                    screen_off=self.screen_off.get_active(),
                 )
             except OSError as error:
                 if self.log is not None:
@@ -637,7 +685,10 @@ class MainWindow(Gtk.ApplicationWindow):
                 feedback(self.screen_status, f"No se pudo buscar la ventana en X11. {error}", error=True)
             if self.window_id:
                 self._update_controls()
-                feedback(self.screen_status, "Transmitiendo · Arrastrá la barra de la ventana para moverla.")
+                message = "Transmitiendo · Arrastrá la barra de la ventana para moverla."
+                if self.screen_off.get_active() and self.allow_control.get_active():
+                    message = "Transmitiendo · Alt izquierdo + Mayús + O en el visor enciende la pantalla del teléfono."
+                feedback(self.screen_status, message)
             elif time.monotonic() - self.start_time > 18 and not self.window_error:
                 feedback(self.screen_status, "La ventana todavía no apareció. Revisá el teléfono y la conexión.")
         return GLib.SOURCE_CONTINUE

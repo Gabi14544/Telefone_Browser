@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 import time
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePath, PurePosixPath
 
 
 APP_NAME = "Telefone Browser"
@@ -19,6 +19,10 @@ PHONE_ROOT = PurePosixPath("/sdcard")
 
 
 class AppError(Exception):
+    pass
+
+
+class TransferCancelled(AppError):
     pass
 
 
@@ -65,9 +69,10 @@ class PhoneEntry:
 
 
 @dataclass(frozen=True)
-class Downloads:
-    saved: tuple[Path, ...]
+class TransferResult:
+    saved: tuple[PurePath, ...]
     error: str = ""
+    cancelled: bool = False
 
 
 def wireless_address(value):
@@ -146,9 +151,13 @@ def command(argv, *, timeout=12, env=None, input_data=None, cancel=None):
     return result.stdout
 
 
-def interruptible_command(argv, timeout, env, cancel):
+def check_cancelled(cancel):
     if cancel.is_set():
-        raise AppError("Descarga cancelada.")
+        raise TransferCancelled
+
+
+def interruptible_command(argv, timeout, env, cancel):
+    check_cancelled(cancel)
     deadline = time.monotonic() + timeout
     with subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                           stderr=subprocess.PIPE, env=env) as process:
@@ -162,7 +171,7 @@ def interruptible_command(argv, timeout, env, cancel):
                 except subprocess.TimeoutExpired:
                     continue
                 return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
-            raise AppError("Descarga cancelada.")
+            raise TransferCancelled
         finally:
             if process.poll() is None:
                 process.kill()
@@ -204,7 +213,7 @@ class Backend:
         if state != b"device":
             raise AppError("El teléfono todavía no está listo. Revisá Depuración inalámbrica.")
 
-    def start_screen(self, serial, quality, allow_control, log):
+    def start_screen(self, serial, quality, allow_control, log, *, screen_off=False):
         args = [
             self.scrcpy, "--serial", serial, "--window-title", SCREEN_TITLE,
             "--window-height=530", "--video-codec=h264",
@@ -213,6 +222,8 @@ class Backend:
         ]
         if not allow_control:
             args.append("--no-control")
+        elif screen_off:
+            args.append("--turn-screen-off")
         return subprocess.Popen(args, env={**self.environment, "SDL_VIDEODRIVER": "x11"},
                                 stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
 
@@ -238,18 +249,99 @@ done
     def download(self, serial, files, destination, progress, cancel):
         saved = []
         with tempfile.TemporaryDirectory(prefix=".telefone-", dir=destination) as staging:
+            stage = Path(staging) / "archivo"
             for index, remote in enumerate(files, 1):
                 check_phone_path(remote)
                 progress(index, len(files), remote.name)
-                stage = Path(staging) / "archivo"
                 try:
                     self.adb_command("pull", str(remote), str(stage), serial=serial,
                                      timeout=1800, cancel=cancel)
+                    check_cancelled(cancel)
                     saved.append(publish_download(stage, destination, remote.name))
                     stage.unlink()
+                except TransferCancelled:
+                    return TransferResult(tuple(saved), cancelled=True)
                 except (AppError, OSError) as error:
-                    return Downloads(tuple(saved), f"{remote.name}\n{error}")
-        return Downloads(tuple(saved))
+                    return TransferResult(tuple(saved), f"{remote.name}\n{error}")
+        return TransferResult(tuple(saved))
+
+    def upload(self, serial, files, destination, progress, cancel):
+        check_phone_path(destination)
+        if not files or cancel.is_set():
+            return TransferResult((), cancelled=cancel.is_set())
+
+        template = shlex.quote(str(destination / ".telefone-subida.XXXXXX"))
+        output = self.adb_command("shell", "-T", f"mktemp -d {template}", serial=serial)
+        staging = PurePosixPath(output.decode("utf-8", "replace").removesuffix("\n"))
+        if staging.parent != destination or not re.fullmatch(r"\.telefone-subida\.[a-zA-Z0-9]{6}", staging.name):
+            raise AppError("Android no confirmó la carpeta temporal para la subida.")
+
+        saved = []
+        error = ""
+        cancelled = False
+        stage = None
+        try:
+            for index, local in enumerate(files, 1):
+                check_cancelled(cancel)
+                progress(index, len(files), local.name)
+                source = local.resolve(strict=True)
+                if not source.is_file():
+                    raise AppError("Elegí un archivo de la computadora.")
+                stage = staging / local.name
+                self.adb_command("push", str(source), str(stage), serial=serial,
+                                 timeout=1800, cancel=cancel)
+                check_cancelled(cancel)
+                saved.append(self._publish_upload(serial, stage, destination))
+                stage = None
+        except TransferCancelled:
+            cancelled = True
+        except (AppError, OSError) as exc:
+            error = f"{local.name}\n{exc}"
+        finally:
+            cleanup = f"rmdir {shlex.quote(str(staging))}"
+            if stage is not None:
+                cleanup = f"rm -f {shlex.quote(str(stage))} && {cleanup}"
+            try:
+                self.adb_command("shell", "-T", cleanup, serial=serial, timeout=8)
+            except (AppError, OSError):
+                error = f"{error}\nAndroid dejó pendiente la limpieza de {staging}.".strip()
+        return TransferResult(tuple(saved), error, cancelled)
+
+    def _publish_upload(self, serial, stage, destination):
+        stem, suffix = os.path.splitext(stage.name)
+        variables = {
+            "source": str(stage), "folder": str(destination),
+            "name": stage.name, "stem": stem, "suffix": suffix,
+        }
+        script = "\n".join(f"{key}={shlex.quote(value)}" for key, value in variables.items())
+        # Reserve the final path with noclobber so simultaneous uploads choose different names.
+        script += r"""
+target="$folder/$name"
+number=1
+while :; do
+    if [ ! -e "$target" ] && [ ! -L "$target" ]; then
+        if (set -C; : > "$target") 2>/dev/null; then
+            if mv -fT "$source" "$target"; then
+                printf '%s\000' "$target"
+                exit 0
+            fi
+            rm -f "$target"
+            exit 1
+        fi
+        if [ ! -e "$target" ] && [ ! -L "$target" ]; then
+            printf '%s\n' 'Android no permitió escribir en esta carpeta.' >&2
+            exit 1
+        fi
+    fi
+    target="$folder/$stem ($number)$suffix"
+    number=$((number + 1))
+done
+"""
+        output = self.adb_command("shell", "-T", script, serial=serial)
+        target = PurePosixPath(output.removesuffix(b"\x00").decode("utf-8", "replace"))
+        if not output.endswith(b"\x00") or target.parent != destination:
+            raise AppError("Android no confirmó el archivo guardado.")
+        return target
 
 
 def publish_download(source, destination, filename):

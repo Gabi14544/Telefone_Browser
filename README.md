@@ -1,6 +1,6 @@
 # Telefone Browser
 
-Aplicación de escritorio para conectar un Samsung con Android a una PC con Linux Mint. Permite ver y controlar el teléfono en tiempo real y descargar fotos, videos y otros archivos de su almacenamiento compartido. La conexión es local.
+Aplicación de escritorio para conectar un Samsung con Android a una PC con Linux Mint. Permite ver y controlar el teléfono en tiempo real y copiar archivos entre la PC y el almacenamiento compartido del teléfono. La conexión es local.
 
 La aplicación está pensada para Linux Mint 22.3 de 64 bits con Cinnamon y X11. Usa Python y GTK 3 para el panel, scrcpy para replicar la pantalla y ADB para vincular el teléfono y transferir archivos.
 
@@ -41,17 +41,19 @@ Si Linux indica que tu usuario no está en el grupo `plugdev`, agregalo con `sud
 - **Fluido** arranca con un máximo de 720 px en el lado largo, hasta 24 FPS y 2 Mb/s. Para el Celeron N2808 con 4 GB de RAM, probá **Ahorro** (540 px, 15 FPS, 1 Mb/s) si hay tirones. **Detalle** sube a 1080 px y 30 FPS. El rendimiento depende del teléfono, la red y la carga de la PC.
 - Arrastrá la barra de título para mover la ventana y los bordes para cambiar su tamaño. El panel tiene **Mostrar**, **Ocultar**, **Pantalla completa** y **Siempre visible**. Ocultar minimiza la ventana y mantiene la transmisión activa. Volvé al panel con `Alt+Tab`.
 - Usá el mouse y el teclado sobre la pantalla transmitida. Si solo querés ver, desactivá **Control con mouse y teclado** antes de iniciar. La transmisión usa video H.264 y tiene el audio desactivado.
-- En **Explorar archivos**, abrí una carpeta o usá los accesos a Cámara, Imágenes y Descargas. Seleccioná uno o más archivos y elegí una carpeta de la PC. La app conserva los originales del teléfono y, si un nombre ya existe en la PC, guarda la nueva copia con un número.
+- Para usar el Samsung desde la PC con la pantalla física apagada, desbloquealo, activá **Apagar pantalla del teléfono** e iniciá la transmisión con el control por mouse y teclado habilitado. Mientras estás en el visor, `Alt izquierdo + O` la apaga y `Alt izquierdo + Mayús + O` la vuelve a encender. El botón físico de encendido también puede encenderla. Si Android bloquea la sesión, desbloqueala con tu PIN o huella.
+- En **Explorar archivos**, abrí una carpeta o usá los accesos a Cámara, Imágenes y Descargas. Para copiar del Samsung a la PC, seleccioná los archivos y pulsá **Descargar selección**. Para copiar de la PC al Samsung, abrí la carpeta de destino, por ejemplo **Descargas**, y pulsá **Subir archivos**.
+- Las transferencias copian los archivos y conservan los originales. Si en el destino ya existe un archivo con el mismo nombre, la app agrega un número a la copia.
 - Android restringe el acceso a datos privados de aplicaciones. Algunas aplicaciones o pantallas protegidas pueden aparecer en negro por las restricciones de captura de Android.
 
 ## Desarrollar o probar
 
 Usá la copia del repositorio que ya esté abierta. En Linux X11 con GTK 3, `adb`, `scrcpy` 3.3.4, `wmctrl` y `xdotool` en el PATH, ejecutá `./abrir` desde la raíz. También podés probar la instalación para tu usuario y abrir la aplicación desde Cinnamon.
 
-Una prueba completa con dispositivo requiere un Android autorizado. Vinculalo por Wi-Fi, iniciá el video, escribí o tocá algo en la ventana, ocultala y recuperala. Descargá una foto y abrila en la PC para comprobar la transferencia.
+Una prueba completa con dispositivo requiere un Android autorizado. Vinculalo por Wi-Fi y probá el control con la pantalla del teléfono apagada. Encendela de nuevo desde el visor. Subí un archivo a **Descargas** y recuperalo con **Descargar selección**.
 
 ## Posibles ampliaciones
 
-Capturas de pantalla desde el panel, grabación local, atajos configurables, audio opcional en dispositivos compatibles y envío de archivos desde la PC al teléfono desde el explorador.
+Capturas de pantalla desde el panel, grabación local, atajos configurables y audio opcional en dispositivos compatibles.
 
 [Proyecto scrcpy y documentación de Genymobile](https://github.com/Genymobile/scrcpy/tree/v3.3.4)
