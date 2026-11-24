@@ -1,0 +1,171 @@
+window.telefone,
+window.telefone-dialog {
+  background-color: #f3f8fe;
+  color: #142c47;
+}
+
+.telefone .hero {
+  padding: 16px;
+  border: 1px solid #cfe5f7;
+  border-radius: 17px;
+  background-image: linear-gradient(to right, #dcefff, #eef8ff);
+}
+
+.telefone .brand-mark {
+  padding: 11px;
+  border-radius: 14px;
+  background-color: #196bc0;
+  color: #ffffff;
+}
+
+.telefone .hero-title {
+  color: #132e50;
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.telefone .hero-subtitle,
+.telefone .secondary,
+.telefone-dialog .secondary {
+  color: #445f7b;
+  font-size: 13px;
+}
+
+.telefone .connection-pill,
+.telefone-dialog .connection-pill {
+  padding: 5px 10px;
+  color: #355876;
+  background-color: #eef5fc;
+  border: 1px solid #c4dbef;
+  border-radius: 99px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.telefone .connection-pill.connected,
+.telefone-dialog .connection-pill {
+  color: #10599f;
+  background-color: #e0f1ff;
+  border-color: #b6dcf8;
+}
+
+.telefone .card,
+.telefone-dialog .card {
+  padding: 13px 15px;
+  border: 1px solid #d7e6f4;
+  border-radius: 13px;
+  background-color: #ffffff;
+}
+
+.telefone .section-title,
+.telefone-dialog .section-title {
+  color: #193856;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.telefone-dialog .dialog-title {
+  color: #132e50;
+  font-size: 21px;
+  font-weight: 800;
+}
+
+.telefone .accent-icon,
+.telefone-dialog .accent-icon {
+  color: #196bc0;
+}
+
+.telefone .field-label,
+.telefone-dialog .field-label,
+.telefone-dialog .path-label {
+  color: #345672;
+  font-weight: 600;
+}
+
+.telefone button,
+.telefone-dialog button {
+  min-height: 23px;
+  padding: 4px 10px;
+  border: 1px solid #c7dced;
+  border-radius: 8px;
+  background-image: none;
+  background-color: #f8fbff;
+  color: #20496e;
+  box-shadow: none;
+  text-shadow: none;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.telefone button:hover,
+.telefone-dialog button:hover {
+  background-color: #e7f4ff;
+  border-color: #9bc6e8;
+}
+
+.telefone button.primary,
+.telefone-dialog button.primary {
+  border-color: #1767b9;
+  background-color: #1767b9;
+  color: #ffffff;
+}
+
+.telefone button.primary:hover,
+.telefone-dialog button.primary:hover {
+  border-color: #10579f;
+  background-color: #10579f;
+}
+
+.telefone button:disabled,
+.telefone-dialog button:disabled {
+  border-color: #dce8f3;
+  background-color: #f4f8fc;
+  color: #67809a;
+}
+
+.telefone button.primary:disabled,
+.telefone-dialog button.primary:disabled {
+  border-color: #d0e5f6;
+  background-color: #e0effb;
+  color: #527595;
+}
+
+.telefone button:focus,
+.telefone-dialog button:focus,
+.telefone-dialog entry:focus {
+  outline-color: #267dca;
+  outline-style: solid;
+  outline-width: 2px;
+  outline-offset: -3px;
+}
+
+.telefone-dialog entry {
+  border: 1px solid #c7dced;
+  border-radius: 8px;
+  background-image: none;
+  background-color: #ffffff;
+  color: #142c47;
+  box-shadow: none;
+  min-height: 25px;
+}
+
+.telefone switch:checked {
+  background-color: #237ac8;
+  background-image: none;
+  border-color: #237ac8;
+}
+
+.telefone-dialog treeview.view {
+  background-color: #ffffff;
+  color: #193856;
+}
+
+.telefone-dialog treeview.view:selected {
+  background-color: #d8eeff;
+  color: #123c66;
+}
+
+.telefone .error,
+.telefone-dialog .error {
+  color: #a1302f;
+}
